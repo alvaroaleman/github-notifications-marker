@@ -40,7 +40,7 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string]) e
 	}
 	currentUser := userResp.GetLogin()
 
-	result, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{})
+	result, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("failed to list github notifications: %w", err)
 	}
@@ -97,7 +97,7 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string]) e
 		if _, err := client.Activity.MarkThreadRead(ctx, *notification.ID); err != nil {
 			return fmt.Errorf("failed to mark notification %q as read: %w", *notification.ID, err)
 		}
-		l.Sugar().Info("marked notification as read", *notification.Subject.URL)
+		l.Sugar().Info("marked notification as read ", *notification.Subject.URL)
 	}
 
 	return nil
