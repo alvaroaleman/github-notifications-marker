@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/ptr"
 )
 
 func main() {
@@ -40,14 +41,35 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string]) e
 	}
 	currentUser := userResp.GetLogin()
 
-	result, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{All: true})
-	if err != nil {
-		return fmt.Errorf("failed to list github notifications: %w", err)
-	}
-	l.Sugar().Infof("got %d notifications", len(result))
+	var resultCount *int
 
+	for resultCount == nil || *resultCount == 50 {
+		result, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to list github notifications: %w", err)
+		}
+		resultCount = ptr.To(len(result))
+		l.Sugar().Infof("got %d notifications", *resultCount)
+
+		if err := processNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore, currentUser, result); err != nil {
+			return fmt.Errorf("failed to process notifications: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func processNotifications(
+	ctx context.Context,
+	l *zap.Logger,
+	client *github.Client,
+	authorsToIgnore sets.Set[string],
+	teamstoIgnore sets.Set[string],
+	currentUser string,
+	notifications []*github.Notification,
+) error {
 	var toMarkRead []*github.Notification
-	for _, n := range result {
+	for _, n := range notifications {
 		// Always allow explicit mention
 		if *n.Reason != "review_requested" {
 			continue
