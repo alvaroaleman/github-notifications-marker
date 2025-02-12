@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/ptr"
 )
 
 func main() {
@@ -41,19 +40,23 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string]) e
 	}
 	currentUser := userResp.GetLogin()
 
-	var resultCount *int
-
-	for resultCount == nil || *resultCount == 50 {
-		result, _, err := client.Activity.ListNotifications(ctx, &github.NotificationListOptions{})
+	opts := &github.NotificationListOptions{}
+	for {
+		result, response, err := client.Activity.ListNotifications(ctx, opts)
 		if err != nil {
 			return fmt.Errorf("failed to list github notifications: %w", err)
 		}
-		resultCount = ptr.To(len(result))
-		l.Sugar().Infof("got %d notifications", *resultCount)
+		l.Sugar().Infof("got %d notifications", len(result))
 
 		if err := processNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore, currentUser, result); err != nil {
 			return fmt.Errorf("failed to process notifications: %w", err)
 		}
+
+		if response.NextPage == 0 {
+			break
+		}
+
+		opts.Page = response.NextPage
 	}
 
 	return nil
