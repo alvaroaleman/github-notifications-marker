@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v69/github"
 	"github.com/spf13/cobra"
@@ -17,8 +18,9 @@ func main() {
 	cmd := &cobra.Command{}
 	authorsToIgnore := cmd.Flags().StringArray("authors-to-ignore", nil, "Authors to ignore")
 	teamstoIgnore := cmd.Flags().StringArray("teams-to-ignore", nil, "Teams to ignore")
+	interval := cmd.Flags().Duration("interval", 0, "If set, run continuously, repeating every interval (e.g. 5m). If unset, run once and exit.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return run(cmd.Context(), sets.New(*authorsToIgnore...), sets.New(*teamstoIgnore...))
+		return run(cmd.Context(), sets.New(*authorsToIgnore...), sets.New(*teamstoIgnore...), *interval)
 	}
 
 	if err := cmd.Execute(); err != nil {
@@ -27,13 +29,33 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string]) error {
+func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string], interval time.Duration) error {
 	l, err := zap.NewDevelopment()
 	if err != nil {
 		return fmt.Errorf("failed to get logger: %w", err)
 	}
 	client := github.NewClient(nil).WithAuthToken(os.Getenv("GITHUB_TOKEN"))
 
+	if interval <= 0 {
+		return markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore)
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore); err != nil {
+			l.Sugar().Errorf("failed to mark notifications: %v", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func markNotifications(ctx context.Context, l *zap.Logger, client *github.Client, authorsToIgnore, teamstoIgnore sets.Set[string]) error {
 	userResp, _, err := client.Users.Get(ctx, "")
 	if err != nil {
 		return fmt.Errorf("failed to get current user: %w", err)
