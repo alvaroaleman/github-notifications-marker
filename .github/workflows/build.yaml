@@ -1,0 +1,49 @@
+name: Create and publish a Docker image
+
+on:
+  push:
+    branches: ['master']
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.26.x
+
+      - run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o github-notifications-marker .
+          docker build -t ghcr.io/alvaroaleman/github-notifications-marker:latest-amd64 .
+
+      - run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o github-notifications-marker .
+          docker buildx build --platform linux/arm64 -t ghcr.io/alvaroaleman/github-notifications-marker:latest-arm64 .
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: |
+          docker push ghcr.io/alvaroaleman/github-notifications-marker:latest-amd64
+          docker push ghcr.io/alvaroaleman/github-notifications-marker:latest-arm64
+          docker manifest create ghcr.io/alvaroaleman/github-notifications-marker:latest \
+            ghcr.io/alvaroaleman/github-notifications-marker:latest-amd64 \
+            ghcr.io/alvaroaleman/github-notifications-marker:latest-arm64
+          docker manifest push ghcr.io/alvaroaleman/github-notifications-marker:latest

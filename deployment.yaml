@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: github-notifications-marker
+  name: github-notifications-marker
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-notifications-marker
+  template:
+    metadata:
+      labels:
+        app: github-notifications-marker
+    spec:
+      hostUsers: false
+      containers:
+      - image: ghcr.io/alvaroaleman/github-notifications-marker:latest
+        name: github-notifications-marker
+        args:
+        - --interval=5m
+        - --authors-to-ignore=the-ci-bot
+        - --teams-to-ignore=the-team-i-am-not-active-in
+        env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-notifications-marker
+              key: token

@@ -1,6 +1,6 @@
 module github.com/alvaroaleman/github-notifications-marker
 
-go 1.23.6
+go 1.26
 
 require (
 	github.com/google/go-github/v69 v69.0.0
