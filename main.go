@@ -93,7 +93,7 @@ func processNotifications(
 	currentUser string,
 	notifications []*github.Notification,
 ) error {
-	var toMarkRead []*github.Notification
+	var toDismiss []*github.Notification
 	for _, n := range notifications {
 		// Always allow explicit mention
 		if *n.Reason != "review_requested" {
@@ -112,7 +112,7 @@ func processNotifications(
 			}
 			author := strings.TrimSuffix(*pr.User.Login, "[bot]")
 			if authorsToIgnore.Has(author) {
-				toMarkRead = append(toMarkRead, n)
+				toDismiss = append(toDismiss, n)
 				continue
 			}
 
@@ -134,17 +134,20 @@ func processNotifications(
 			}
 
 			if requstedIgnoredTeam && !requestedUser {
-				toMarkRead = append(toMarkRead, n)
+				toDismiss = append(toDismiss, n)
 			}
 		}
 	}
 
-	l.Sugar().Infof("marking %d notifications as read", len(toMarkRead))
-	for _, notification := range toMarkRead {
+	l.Sugar().Infof("unsubscribing from %d notifications and marking them as read", len(toDismiss))
+	for _, notification := range toDismiss {
+		if _, err := client.Activity.DeleteThreadSubscription(ctx, *notification.ID); err != nil {
+			return fmt.Errorf("failed to unsubscribe from notification %q: %w", *notification.ID, err)
+		}
 		if _, err := client.Activity.MarkThreadRead(ctx, *notification.ID); err != nil {
 			return fmt.Errorf("failed to mark notification %q as read: %w", *notification.ID, err)
 		}
-		l.Sugar().Info("marked notification as read ", *notification.Subject.URL)
+		l.Sugar().Info("unsubscribed from notification and marked it as read ", *notification.Subject.URL)
 	}
 
 	return nil
