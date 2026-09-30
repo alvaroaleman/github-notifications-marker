@@ -20,7 +20,15 @@ func main() {
 	teamstoIgnore := cmd.Flags().StringArray("teams-to-ignore", nil, "Teams to ignore")
 	interval := cmd.Flags().Duration("interval", 0, "If set, run continuously, repeating every interval (e.g. 5m). If unset, run once and exit.")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return run(cmd.Context(), sets.New(*authorsToIgnore...), sets.New(*teamstoIgnore...), *interval)
+		authorsToIgnoreSet := make(sets.Set[string], len(*authorsToIgnore))
+		for _, author := range *authorsToIgnore {
+			authorsToIgnoreSet.Insert(strings.ToLower(author))
+		}
+		teamstoIgnoreSet := make(sets.Set[string], len(*teamstoIgnore))
+		for _, team := range *teamstoIgnore {
+			teamstoIgnoreSet.Insert(strings.ToLower(team))
+		}
+		return run(cmd.Context(), authorsToIgnoreSet, teamstoIgnoreSet, *interval)
 	}
 
 	if err := cmd.Execute(); err != nil {
@@ -84,6 +92,21 @@ func markNotifications(ctx context.Context, l *zap.Logger, client *github.Client
 	return nil
 }
 
+func teamMatches(teamsToIgnore sets.Set[string], team *github.Team) bool {
+	if team == nil {
+		return false
+	}
+	for _, candidate := range []string{team.GetName(), team.GetSlug()} {
+		if candidate == "" {
+			continue
+		}
+		if teamsToIgnore.Has(strings.ToLower(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
 func processNotifications(
 	ctx context.Context,
 	l *zap.Logger,
@@ -116,24 +139,21 @@ func processNotifications(
 				continue
 			}
 
-			events, _, err := client.Issues.ListIssueEvents(ctx, n.Repository.GetOwner().GetLogin(), n.Repository.GetName(), number, &github.ListOptions{})
-			if err != nil {
-				return fmt.Errorf("failed to fetch events for PR %d for repository %q: %w", number, n.Repository.GetFullName(), err)
+			var requestedIgnoredTeam, requestedUser bool
+			for _, team := range pr.RequestedTeams {
+				if teamMatches(teamstoIgnore, team) {
+					requestedIgnoredTeam = true
+					break
+				}
 			}
-			var requstedIgnoredTeam, requestedUser bool
-			for _, event := range events {
-				if *event.Event != "review_requested" {
-					continue
-				}
-				if event.RequestedTeam != nil && teamstoIgnore.Has(*event.RequestedTeam.Name) {
-					requstedIgnoredTeam = true
-				}
-				if event.RequestedReviewer != nil && *event.RequestedReviewer.Login == currentUser {
+			for _, reviewer := range pr.RequestedReviewers {
+				if strings.EqualFold(reviewer.GetLogin(), currentUser) {
 					requestedUser = true
+					break
 				}
 			}
 
-			if requstedIgnoredTeam && !requestedUser {
+			if requestedIgnoredTeam && !requestedUser {
 				toDismiss = append(toDismiss, n)
 			}
 		}
