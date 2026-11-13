@@ -44,14 +44,27 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string], i
 	}
 	client := github.NewClient(nil).WithAuthToken(os.Getenv("GITHUB_TOKEN"))
 
+	// Cache successful user lookups, but retry failures on the next poll.
+	var currentUser string
+	getUser := func() (string, error) {
+		if currentUser == "" {
+			user, _, err := client.Users.Get(ctx, "")
+			if err != nil {
+				return "", fmt.Errorf("failed to get current user: %w", err)
+			}
+			currentUser = user.GetLogin()
+		}
+		return currentUser, nil
+	}
+
 	if interval <= 0 {
-		return markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore)
+		return markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore, getUser)
 	}
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore); err != nil {
+		if err := markNotifications(ctx, l, client, authorsToIgnore, teamstoIgnore, getUser); err != nil {
 			l.Sugar().Errorf("failed to mark notifications: %v", err)
 		}
 
@@ -63,14 +76,13 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string], i
 	}
 }
 
-func markNotifications(ctx context.Context, l *zap.Logger, client *github.Client, authorsToIgnore, teamstoIgnore sets.Set[string]) error {
-	userResp, _, err := client.Users.Get(ctx, "")
+func markNotifications(ctx context.Context, l *zap.Logger, client *github.Client, authorsToIgnore, teamstoIgnore sets.Set[string], getUser func() (string, error)) error {
+	currentUser, err := getUser()
 	if err != nil {
-		return fmt.Errorf("failed to get current user: %w", err)
+		return err
 	}
-	currentUser := userResp.GetLogin()
 
-	opts := &github.NotificationListOptions{}
+	opts := &github.NotificationListOptions{ListOptions: github.ListOptions{PerPage: 100}}
 	for {
 		result, response, err := client.Activity.ListNotifications(ctx, opts)
 		if err != nil {
