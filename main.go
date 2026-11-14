@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v69/github"
+	"github.com/gregjones/httpcache"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -42,7 +43,7 @@ func run(ctx context.Context, authorsToIgnore, teamstoIgnore sets.Set[string], i
 	if err != nil {
 		return fmt.Errorf("failed to get logger: %w", err)
 	}
-	client := github.NewClient(nil).WithAuthToken(os.Getenv("GITHUB_TOKEN"))
+	client := github.NewClient(httpcache.NewMemoryCacheTransport().Client()).WithAuthToken(os.Getenv("GITHUB_TOKEN"))
 
 	// Cache successful user lookups, but retry failures on the next poll.
 	var currentUser string

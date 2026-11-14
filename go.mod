@@ -4,6 +4,7 @@ go 1.26
 
 require (
 	github.com/google/go-github/v69 v69.0.0
+	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79
 	github.com/spf13/cobra v1.8.1
 	go.uber.org/zap v1.27.0
 	k8s.io/apimachinery v0.32.1
